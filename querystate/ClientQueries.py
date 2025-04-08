@@ -1,11 +1,8 @@
 import asyncio
-import json
 import logging
-import os
 import uuid
 
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
-from styx.common import networking
 from styx.common.message_types import MessageType
 from styx.common.serialization import Serializer
 from styx.common.tcp_networking import NetworkingManager
@@ -77,3 +74,6 @@ class ClientQueries:
     async def main(self):
         await self.start()
 
+if __name__ == "__main__":
+    clientQueries = ClientQueries()
+    asyncio.run(clientQueries.main())

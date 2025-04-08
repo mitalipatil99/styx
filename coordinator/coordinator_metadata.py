@@ -239,6 +239,8 @@ class Coordinator(object):
                 logging.warning(f'Kafka at {KAFKA_URL} not ready yet, sleeping for 1 second')
                 time.sleep(1)
         topics = (
+                [NewTopic(topic='query_processing', num_partitions=1, replication_factor=KAFKA_REPLICATION_FACTOR)] +
+                [NewTopic(topic='query_state_response', num_partitions=1, replication_factor=KAFKA_REPLICATION_FACTOR)] +
                 [NewTopic(topic='styx-metadata', num_partitions=1, replication_factor=KAFKA_REPLICATION_FACTOR)] +
                 [NewTopic(topic='sequencer-wal', num_partitions=1, replication_factor=KAFKA_REPLICATION_FACTOR)] +
                 [NewTopic(topic=operator.name,
