@@ -41,10 +41,10 @@ class ClientQueries:
 
         '''api queries with uuid ..TO BE CHANGED'''
         queries = [
-            {"type": "GET_STATE", "uuid": "1234-uuid"},
+            # {"type": "GET_STATE", "uuid": "1234-uuid"},
             {"type": "GET_OPERATOR_STATE", "uuid": "5678-uuid", "operator": "operator1"},
-            {"type": "GET_KEY_STATE", "uuid": "91011-uuid", "operator": "operator2", "key": "key1"},
-            {"type": "GET_ALL_KEYS_FOR_OPERATOR", "uuid": "1213-uuid", "operator": "operator3"},
+            # {"type": "GET_KEY_STATE", "uuid": "91011-uuid", "operator": "operator2", "key": "key1"},
+            # {"type": "GET_ALL_KEYS_FOR_OPERATOR", "uuid": "1213-uuid", "operator": "operator3"},
         ]
         # add range queries here and joins (query language)
 
@@ -62,6 +62,7 @@ class ClientQueries:
                     msg = await self.kafka_consumer.getone()
                     response = self.networking.decode_message(msg)
                     req_res_id = response['uuid']
+                    logging.warning(f"Received response for query uuid: {req_res_id}")
                     logging.warning(f':{response}')
                     '''send response back to client'''
 

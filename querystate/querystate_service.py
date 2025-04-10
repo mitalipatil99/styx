@@ -202,6 +202,7 @@ class QueryStateService(object):
         return response
 
     async def send_response(self, response):
+        logging.warning("sending response to query topic")
         await self.kafka_producer.send_and_wait(KAFKA_QUERY_RESPONSE_TOPIC,self.networking.encode_message(msg=response,
                                                        msg_type=MessageType.QueryMsg,
                                                        serializer=Serializer.MSGPACK))
