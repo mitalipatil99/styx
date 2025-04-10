@@ -1,8 +1,10 @@
 import asyncio
 import logging
+import traceback
 import uuid
 
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
+from aiokafka.errors import UnknownTopicOrPartitionError, KafkaConnectionError
 from styx.common.message_types import MessageType
 from styx.common.serialization import Serializer
 from styx.common.tcp_networking import NetworkingManager
@@ -27,10 +29,46 @@ class ClientQueries:
 
     async def start(self):
         """Start Kafka Producer"""
-        await self.kafka_producer.start()
-        await self.kafka_consumer.start()
-        await asyncio.create_task(self.publish_client_queries())
-        await asyncio.create_task(self.consume_query_response())
+        logging.info("Starting Kafka Producer and Consumer")
+        try:
+            while True:
+                try:
+                    logging.warning(f"Starting kafka consumer for client side")
+                    await self.kafka_consumer.start()
+                    logging.warning(f"Starting kafka producer for client side")
+                    await self.kafka_producer.start()
+                except (UnknownTopicOrPartitionError, KafkaConnectionError):
+                    await asyncio.sleep(1)
+                    logging.warning(f'Kafka at {KAFKA_URL} not ready yet, sleeping for 1 second')
+                    continue
+                break
+            kafka_ingress_topic_name: str = 'query_state_response'
+            topics = await self.kafka_consumer.topics()
+            wait_for_topic = True
+            while wait_for_topic:
+                wait_for_topic = False
+                if kafka_ingress_topic_name not in topics:
+                    wait_for_topic = True
+                if not wait_for_topic:
+                    break
+                await asyncio.sleep(1)
+                topics = await self.kafka_consumer.topics()
+
+            self.kafka_consumer.subscribe([kafka_ingress_topic_name])
+
+            while True:
+                try:
+                    await asyncio.create_task(self.publish_client_queries())
+                    await asyncio.create_task(self.consume_query_response())
+                except Exception as e:
+                    logging.error(traceback.format_exc())
+
+        except Exception as e:
+            logging.error(traceback.format_exc())
+        finally:
+            await self.kafka_consumer.stop()
+
+
 
     async def stop(self):
         """Shutdown Kafka"""
@@ -55,7 +93,6 @@ class ClientQueries:
                                                        serializer=Serializer.MSGPACK))
 
     async def consume_query_response(self):
-        self.kafka_consumer.assign(['query_state_response'])
         while True:
             try:
                 async with asyncio.timeout(KAFKA_CONSUME_TIMEOUT_MS / 1000):
