@@ -1,4 +1,5 @@
 import asyncio
+import json
 import socket
 import traceback
 import uuid
@@ -6,7 +7,7 @@ import os
 from asyncio import StreamReader, StreamWriter
 
 
-from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, ConsumerRecord
 from aiokafka.errors import UnknownTopicOrPartitionError, KafkaConnectionError
 
 from styx.common.logging import logging
@@ -123,9 +124,7 @@ class QueryStateService(object):
             await server.serve_forever()
 
     async def start_query_processing(self):
-        kafka_consumer = AIOKafkaConsumer(bootstrap_servers=[KAFKA_URL],
-                                          enable_auto_commit=False,
-                                          client_id=f"{uuid.uuid4()}")
+        kafka_consumer = AIOKafkaConsumer(bootstrap_servers=[KAFKA_URL])
         try:
             while True:
                 # start the kafka consumer
@@ -162,13 +161,15 @@ class QueryStateService(object):
                     await self.mergeDeltas_and_updateState(self.latest_epoch_count)
                 try:
                     async with asyncio.timeout(KAFKA_CONSUME_TIMEOUT_MS / 1000):
-                        msg = await kafka_consumer.getone()
-                        query= self.networking.decode_message(msg)
+                        msg: ConsumerRecord = await kafka_consumer.getone()
+                        logging.warning(f"Received message from Kafka topic: {msg.topic}")
+                        logging.warning(f"Message value: {msg.value}")
+                        query=  json.loads(msg.value.decode('utf-8'))
                         response =  await self.get_query_state_response(query)
                         await self.send_response(response)
 
                 except TimeoutError:
-                    print(f"No queries for {KAFKA_CONSUME_TIMEOUT_MS} ms")
+                    logging.info(f"No queries for {KAFKA_CONSUME_TIMEOUT_MS} ms")
                 await asyncio.sleep(0.01)
         except Exception as e:
             logging.error(traceback.format_exc())
@@ -177,6 +178,7 @@ class QueryStateService(object):
 
 
     async def get_query_state_response(self, query):
+        logging.warning(f'query received: {query}')
         query_type = query['type']
         query_uuid = query['uuid']
         response={"uuid": query_uuid}
@@ -203,9 +205,7 @@ class QueryStateService(object):
 
     async def send_response(self, response):
         logging.warning("sending response to query topic")
-        await self.kafka_producer.send_and_wait(KAFKA_QUERY_RESPONSE_TOPIC,self.networking.encode_message(msg=response,
-                                                       msg_type=MessageType.QueryMsg,
-                                                       serializer=Serializer.MSGPACK))
+        await self.kafka_producer.send_and_wait(KAFKA_QUERY_RESPONSE_TOPIC, json.dumps(response).encode('utf-8'))
 
     def start_networking_tasks(self):
         self.networking.start_networking_tasks()
