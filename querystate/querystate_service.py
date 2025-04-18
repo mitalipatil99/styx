@@ -186,22 +186,39 @@ class QueryStateService(object):
         if query_type =="GET_STATE":
             response["state"] = self.state_store
         elif query_type == "GET_OPERATOR_STATE":
+            logging.warning(f'getting ycsb operator state')
             operator = query['operator']
-            response["operator_state"] = self.state_store.get(operator,"operator not found")
+            logging.warning(f'operator: {operator}')
+            operator_data = {}
+            for (op, partition), data in self.state_store.items():
+                if op == operator:
+                    operator_data.update(data)
+            logging.warning(f'operator_data: {operator_data}')
+            response["operator_state"] = operator_data
+        elif query_type == "GET_OPERATOR_PARTITION_STATE":
+            operator = query['operator']
+            partition = query['partition']
+            operator_partition_data = {}
+            for (op, part), data in self.state_store.items():
+                if op == operator and part == partition:
+                    operator_partition_data.update(data)
+            logging.warning(f'operator_partition_data: {operator_partition_data}')
+            response["operator_partition_state"] = operator_partition_data
         elif query_type == "GET_KEY_STATE":
             operator = query['operator']
             key = query['key']
-            response["key_state"] = self.state_store.get(operator,{}).get(key,"key not found")
-        elif query_type =="GET_ALL_KEYS_FOR_OPERATOR":
-            operator = query['operator']
-            if operator in self.state_store:
-                response["keys"] = list(self.state_store[operator].keys())
-            else:
-                response["error"] = "Operator not found"
-        else:
-            response["error"] = "Invalid query type"
-
+            key_partition = self.get_partition(key)
+            for(op, partition), data in self.state_store.items():
+                if op == operator and partition == key_partition:
+                    operator_key_data = data.get(key, None)
+            logging.warning(f'operator_data for key:{key}:{operator_key_data}')
+            response["operator_key_state"] = operator_key_data
         return response
+
+    def get_partition(self, key):
+        if key is None:
+            return None
+        return key % self.total_workers
 
     async def send_response(self, response):
         logging.warning("sending response to query topic")
@@ -220,3 +237,6 @@ class QueryStateService(object):
 if __name__ == "__main__":
     query_state_service = QueryStateService()
     asyncio.run(query_state_service.main())
+
+
+# get partition using modulo

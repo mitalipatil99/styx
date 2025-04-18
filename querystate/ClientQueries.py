@@ -81,9 +81,9 @@ class ClientQueries:
         logging.warning("Publishing client queries")
         queries = [
             # {"type": "GET_STATE", "uuid": "1234-uuid"},
-            {"type": "GET_OPERATOR_STATE", "uuid": "1", "operator": "ycsb"},
-            # {"type": "GET_KEY_STATE", "uuid": "91011-uuid", "operator": "operator2", "key": "key1"},
-            # {"type": "GET_ALL_KEYS_FOR_OPERATOR", "uuid": "1213-uuid", "operator": "operator3"},
+            # {"type": "GET_OPERATOR_STATE", "uuid": "1", "operator": "ycsb"},
+            # {"type": "GET_OPERATOR_PARTITION_STATE", "uuid": "2", "operator": "ycsb", "partition": 1},
+             {"type": "GET_KEY_STATE", "uuid": "91011-uuid", "operator": "ycsb", "key": 57},
         ]
         # add range queries here and joins (query language)
 
@@ -96,7 +96,7 @@ class ClientQueries:
         while True:
             try:
                 logging.info("Waiting for response from querystate")
-                async with asyncio.timeout(KAFKA_CONSUME_TIMEOUT_MS / 1000):
+                async with asyncio.timeout(1000/ 1000):
                     msg: ConsumerRecord = await self.kafka_consumer.getone()
                     logging.warning(f"Received message: {msg}")
                     response = json.loads(msg.value.decode('utf-8'))

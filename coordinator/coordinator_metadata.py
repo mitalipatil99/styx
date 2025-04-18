@@ -220,6 +220,7 @@ class Coordinator(object):
                                               msg_type=MessageType.ReceiveExecutionPlan)
                  for worker in self.worker_pool.get_participating_workers()]
         await asyncio.gather(*tasks)
+        #send amount of workers to querystate.
         self.graph_submitted = True
         self.submitted_graph = stateflow_graph
         metadata_key = msgpack_serialization(self.submitted_graph.name)
