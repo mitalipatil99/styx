@@ -26,6 +26,8 @@ MAX_OPERATOR_PARALLELISM = int(os.getenv('MAX_OPERATOR_PARALLELISM', 10))
 KAFKA_REPLICATION_FACTOR = int(os.getenv('KAFKA_REPLICATION_FACTOR', 3))
 SNAPSHOT_BUCKET_NAME: str = os.getenv('SNAPSHOT_BUCKET_NAME', "styx-snapshots")
 KAFKA_URL: str = os.getenv('KAFKA_URL', None)
+STATE_HOST: str = os.environ['STATE_HOST']
+STATE_PORT: int = int(os.environ['STATE_PORT'])
 
 
 class Coordinator(object):
@@ -220,7 +222,9 @@ class Coordinator(object):
                                               msg_type=MessageType.ReceiveExecutionPlan)
                  for worker in self.worker_pool.get_participating_workers()]
         await asyncio.gather(*tasks)
-        #send amount of workers to querystate.
+        await self.networking.send_message(STATE_HOST, STATE_PORT,
+                                           msg=len(self.worker_pool.get_participating_workers()),
+                                           msg_type=MessageType.Synchronize, serializer=Serializer.MSGPACK)
         self.graph_submitted = True
         self.submitted_graph = stateflow_graph
         metadata_key = msgpack_serialization(self.submitted_graph.name)

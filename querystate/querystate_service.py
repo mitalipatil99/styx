@@ -13,7 +13,6 @@ from aiokafka.errors import UnknownTopicOrPartitionError, KafkaConnectionError
 from styx.common.logging import logging
 from styx.common.message_types import MessageType
 from styx.common.tcp_networking import NetworkingManager, MessagingMode
-from styx.common.protocols import Protocols
 from styx.common.serialization import Serializer
 from styx.common.util.aio_task_scheduler import AIOTaskScheduler
 from struct import unpack
@@ -21,7 +20,6 @@ from struct import unpack
 
 SERVER_PORT = 8080
 
-PROTOCOL = Protocols.Aria
 KAFKA_URL: str = os.getenv('KAFKA_URL', None)
 KAFKA_CONSUME_TIMEOUT_MS = 10 # ms
 KAFKA_QUERY_RESPONSE_TOPIC="query_state_response"
@@ -31,7 +29,7 @@ class QueryStateService(object):
 
     def __init__(self):
 
-        self.total_workers = 4  # Total number of workers
+        self.total_workers = None # Total number of workers
         self.epoch_deltas = {}  # Stores {epoch: {worker_id: delta}}
         self.epoch_count = {}  # Tracks number of deltas received per epoch
         self.state_store = {}  #global state store
@@ -58,6 +56,9 @@ class QueryStateService(object):
         message_type: int = self.networking.get_msg_type(data)
 
         match message_type:
+            case MessageType.Synchronize:
+                self.total_workers = self.networking.decode_message(data)
+                logging.warning(f'Number of Workers :{self.total_workers}')
             case MessageType.QueryMsg:
                 # Decode the message
                 worker_id, epoch_counter, state_delta = self.networking.decode_message(data)
@@ -232,7 +233,6 @@ class QueryStateService(object):
         self.start_networking_tasks()
         self.query_processing_task = asyncio.create_task(self.start_query_processing())
         await self.start_tcp_service()
-
 
 if __name__ == "__main__":
     query_state_service = QueryStateService()
