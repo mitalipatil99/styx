@@ -6,14 +6,14 @@ import uuid
 import os
 from asyncio import StreamReader, StreamWriter
 
-
+import cityhash
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, ConsumerRecord
 from aiokafka.errors import UnknownTopicOrPartitionError, KafkaConnectionError
+from styx.common.exceptions import NonSupportedKeyType
 
 from styx.common.logging import logging
 from styx.common.message_types import MessageType
-from styx.common.tcp_networking import NetworkingManager, MessagingMode
-from styx.common.serialization import Serializer
+from styx.common.tcp_networking import NetworkingManager
 from styx.common.util.aio_task_scheduler import AIOTaskScheduler
 from struct import unpack
 
@@ -216,6 +216,7 @@ class QueryStateService(object):
             operator = query['operator']
             key = query['key']
             key_partition = self.get_partition(key)
+            logging.warning(f'key is :{key}, key type is {type(key)}, key_partition is {key_partition}')
             for(op, partition), data in self.state_store.items():
                 if op == operator and partition == key_partition:
                     operator_key_data = data.get(key, None)
@@ -223,10 +224,21 @@ class QueryStateService(object):
             response["operator_key_state"] = operator_key_data
         return response
 
-    def get_partition(self, key):
+    def get_partition(self, key) -> int | None:
         if key is None:
             return None
-        return key % self.total_workers
+        logging.warning(f'key is :{key}, key type is {type(key)}, key_hash is {self.make_key_hashable(key)}')
+        return self.make_key_hashable(key) % self.total_workers
+
+    @staticmethod
+    def make_key_hashable(key) -> int:
+        if isinstance(key, int):
+            return key
+        else:
+            try:
+                return cityhash.CityHash64(key)
+            except Exception:
+                raise NonSupportedKeyType()
 
     async def send_response(self, response):
         logging.warning("sending response to query topic")

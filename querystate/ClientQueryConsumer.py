@@ -1,0 +1,68 @@
+import asyncio
+import json
+import logging
+from aiokafka import AIOKafkaConsumer
+from aiokafka.errors import KafkaConnectionError
+
+KAFKA_QUERY_RESPONSE_TOPIC = "query_state_response"
+KAFKA_URL = 'localhost:9092'
+KAFKA_CONSUME_TIMEOUT_MS = 100
+
+class ClientQueryConsumer:
+    def __init__(self):
+        self.kafka_consumer: AIOKafkaConsumer | None = None
+
+    async def start(self):
+        """Start Kafka Consumer"""
+        logging.info("Starting Kafka Consumer")
+        try:
+            while True:
+                try:
+                    logging.warning(f"Starting kafka consumer for client side")
+                    await self.kafka_consumer.start()
+                except KafkaConnectionError:
+                    await asyncio.sleep(1)
+                    logging.warning(f'Kafka at {KAFKA_URL} not ready yet, sleeping for 1 second')
+                    continue
+                break
+
+            kafka_ingress_topic_name: str = KAFKA_QUERY_RESPONSE_TOPIC
+            topics = await self.kafka_consumer.topics()
+            wait_for_topic = True
+            while wait_for_topic:
+                wait_for_topic = False
+                if kafka_ingress_topic_name not in topics:
+                    wait_for_topic = True
+                if not wait_for_topic:
+                    break
+                await asyncio.sleep(1)
+                topics = await self.kafka_consumer.topics()
+
+            self.kafka_consumer.subscribe([kafka_ingress_topic_name])
+            await self.consume_query_response()
+
+        except Exception as e:
+            logging.error(f"Error in consumer: {e}")
+        finally:
+            await self.kafka_consumer.stop()
+
+    async def consume_query_response(self):
+        """Consume query responses from Kafka"""
+        while True:
+            logging.info("Waiting for response from querystate")
+            msg = await self.kafka_consumer.getmany(timeout_ms=KAFKA_CONSUME_TIMEOUT_MS)
+            for tp, messages in msg.items():
+                for message in messages:
+                    logging.warning(f"Received message: {message}")
+                    response = json.loads(message.value.decode('utf-8'))
+                    req_res_id = response['uuid']
+                    logging.warning(f"Received response for query uuid: {req_res_id}")
+                    logging.warning(f':{response}')
+
+    async def main(self):
+        self.kafka_consumer = AIOKafkaConsumer(bootstrap_servers=[KAFKA_URL])
+        await self.start()
+
+if __name__ == "__main__":
+    consumer = ClientQueryConsumer()
+    asyncio.run(consumer.main())
