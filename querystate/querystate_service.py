@@ -21,7 +21,7 @@ from struct import unpack
 SERVER_PORT = 8080
 
 KAFKA_URL: str = os.getenv('KAFKA_URL', None)
-KAFKA_CONSUME_TIMEOUT_MS = 10 # ms
+KAFKA_CONSUME_TIMEOUT_MS = 100 # ms
 KAFKA_QUERY_RESPONSE_TOPIC="query_state_response"
 
 
@@ -50,15 +50,19 @@ class QueryStateService(object):
 
         self.kafka_producer: AIOKafkaProducer | None = None
 
+        self.received_workers = asyncio.Event()
+
 
     async def query_state_controller(self, data: bytes):
         """Handles incoming messages related to query state updates."""
+
         message_type: int = self.networking.get_msg_type(data)
 
         match message_type:
             case MessageType.Synchronize:
                 self.total_workers = self.networking.decode_message(data)
                 logging.warning(f'Number of Workers :{self.total_workers}')
+                self.received_workers.set()
             case MessageType.QueryMsg:
                 # Decode the message
                 worker_id, epoch_counter, state_delta = self.networking.decode_message(data)
@@ -74,6 +78,7 @@ class QueryStateService(object):
            maintain a [workerid] [epoch] count , and once count reaches the predefined number of workers,
            lock state and merge all deltas and update the state store.
         """
+        await self.received_workers.wait()
         async with self.state_lock:
             if epoch_counter not in self.epoch_deltas:
                 self.epoch_deltas[epoch_counter]={}
@@ -125,6 +130,7 @@ class QueryStateService(object):
             await server.serve_forever()
 
     async def start_query_processing(self):
+
         kafka_consumer = AIOKafkaConsumer(bootstrap_servers=[KAFKA_URL])
         try:
             while True:
@@ -153,6 +159,7 @@ class QueryStateService(object):
             kafka_consumer.subscribe([kafka_ingress_topic_name])
             # Kafka Consumer ready to consume
             logging.warning(f"Starting coroutine")
+            await self.received_workers.wait()
             while True:
                 # TODO fix for freshness
                 # logging.warning(f'{self.latest_epoch_count}')

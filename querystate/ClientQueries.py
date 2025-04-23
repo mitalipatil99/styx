@@ -56,12 +56,8 @@ class ClientQueries:
 
             self.kafka_consumer.subscribe([kafka_ingress_topic_name])
 
-            while True:
-                try:
-                    await asyncio.create_task(self.publish_client_queries())
-                    await asyncio.create_task(self.consume_query_response())
-                except Exception as e:
-                    logging.error(traceback.format_exc())
+            await self.publish_client_queries()
+            await self.consume_query_response()
 
         except Exception as e:
             logging.error(traceback.format_exc())
@@ -94,20 +90,16 @@ class ClientQueries:
 
     async def consume_query_response(self):
         while True:
-            try:
-                logging.info("Waiting for response from querystate")
-                async with asyncio.timeout(1000/ 1000):
-                    msg: ConsumerRecord = await self.kafka_consumer.getone()
-                    logging.warning(f"Received message: {msg}")
-                    response = json.loads(msg.value.decode('utf-8'))
+            logging.info("Waiting for response from querystate")
+            msg = await self.kafka_consumer.getmany(timeout_ms=KAFKA_CONSUME_TIMEOUT_MS)
+            for tp, messages in msg.items():
+                for message in messages:
+                    logging.warning(f"Received message: {message}")
+                    response = json.loads(message.value.decode('utf-8'))
                     req_res_id = response['uuid']
                     logging.warning(f"Received response for query uuid: {req_res_id}")
                     logging.warning(f':{response}')
                     '''send response back to client'''
-
-            except TimeoutError:
-               pass
-            await asyncio.sleep(0.01)
 
 
 
