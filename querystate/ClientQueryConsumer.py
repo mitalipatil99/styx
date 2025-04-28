@@ -1,4 +1,5 @@
 import asyncio
+import csv
 import json
 import logging
 from aiokafka import AIOKafkaConsumer
@@ -7,10 +8,15 @@ from aiokafka.errors import KafkaConnectionError
 KAFKA_QUERY_RESPONSE_TOPIC = "query_state_response"
 KAFKA_URL = 'localhost:9092'
 KAFKA_CONSUME_TIMEOUT_MS = 100
+CSV_FILE_PATH = ("query_timestamps_consume.csv")
 
 class ClientQueryConsumer:
     def __init__(self):
         self.kafka_consumer: AIOKafkaConsumer | None = None
+        with open(CSV_FILE_PATH, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['uuid', 'produceTimeStamp'])
+
 
     async def start(self):
         """Start Kafka Consumer"""
@@ -56,8 +62,23 @@ class ClientQueryConsumer:
                     logging.warning(f"Received message: {message}")
                     response = json.loads(message.value.decode('utf-8'))
                     req_res_id = response['uuid']
+                    self.record_query_timestamp(req_res_id,message.timestamp)
                     logging.warning(f"Received response for query uuid: {req_res_id}")
                     logging.warning(f':{response}')
+
+    def record_query_timestamp(self, query_id: str, timestamp: int) -> None:
+        """Record query timestamp to CSV file.
+
+        Args:
+            query_id: Unique identifier for the query
+            timestamp: Kafka message timestamp
+        """
+        try:
+            with open(CSV_FILE_PATH, 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow([query_id, timestamp])
+        except IOError as e:
+            logging.warning(f"Failed to write to CSV file: {str(e)}")
 
     async def main(self):
         self.kafka_consumer = AIOKafkaConsumer(bootstrap_servers=[KAFKA_URL])
