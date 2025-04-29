@@ -2,9 +2,15 @@ import asyncio
 import json
 import logging
 import csv
+import time
 from aiokafka import AIOKafkaProducer
 from aiokafka.errors import KafkaConnectionError
 from aiokafka.structs import RecordMetadata
+
+from querystate.queryGenerator import generate_random_query
+
+QUERY_DURATION_SECONDS = 60  # Duration to run queries
+QUERY_INTERVAL_SECONDS = 1  # Time between queries
 
 KAFKA_QUERY_TOPIC = "query_processing"
 KAFKA_URL = 'localhost:9092'
@@ -41,19 +47,16 @@ class ClientQueryPublisher:
     async def publish_client_queries(self):
         """Publish client queries to Kafka"""
         logging.warning("Publishing client queries")
-        query_queue = asyncio.Queue()
+        start_time = time.time()
 
-        # Example: Add initial queries to the queue
-        # await query_queue.put({"type": "GET_OPERATOR_PARTITION_STATE", "uuid": "2", "operator": "ycsb", "partition": 1})
-        await query_queue.put({"type": "GET_KEY_STATE", "uuid": "91011-uuid", "operator": "ycsb", "key": 57})
-        #add round-robin for three queries or random generator.
-        # correctness benchmark
-        while True:
-            query = await query_queue.get()  # Fetch a query from the queue
-            logging.warning(f"Publishing query: {query}")
-            res: RecordMetadata = await self.kafka_producer.send_and_wait(KAFKA_QUERY_TOPIC, json.dumps(query).encode('utf-8'))
-            self.record_query_timestamp(query['uuid'], res.timestamp)
-            query_queue.task_done()
+        while time.time() - start_time < QUERY_DURATION_SECONDS:
+            random_query = generate_random_query()
+            logging.warning(f"Publishing query: {random_query}")
+            res: RecordMetadata = await self.kafka_producer.send_and_wait(KAFKA_QUERY_TOPIC,
+                                                                          json.dumps(random_query).encode('utf-8'))
+            self.record_query_timestamp(random_query['uuid'], res.timestamp)
+            await asyncio.sleep(QUERY_INTERVAL_SECONDS)
+        logging.warning("Finished publishing queries after specified duration")
 
     def record_query_timestamp(self, query_id: str, timestamp: int) -> None:
         """Record query timestamp to CSV file.

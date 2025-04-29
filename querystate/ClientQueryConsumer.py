@@ -81,7 +81,7 @@ class ClientQueryConsumer:
             logging.warning(f"Failed to write to CSV file: {str(e)}")
 
     async def main(self):
-        self.kafka_consumer = AIOKafkaConsumer(bootstrap_servers=[KAFKA_URL])
+        self.kafka_consumer = AIOKafkaConsumer(bootstrap_servers=[KAFKA_URL],auto_offset_reset="earliest")
         await self.start()
 
 if __name__ == "__main__":
