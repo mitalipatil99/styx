@@ -9,6 +9,22 @@ from aiokafka.structs import RecordMetadata
 
 from querystate.queryGenerator import generate_random_query
 
+
+# Create a separate logger for the specific logs
+specific_logger = logging.getLogger("specific_logger")
+specific_logger.setLevel(logging.WARNING)
+
+# Create a file handler for the new logger
+specific_log_handler = logging.FileHandler("query_request.log")
+specific_log_handler.setLevel(logging.WARNING)
+
+# Define the format for the logs
+log_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+specific_log_handler.setFormatter(log_format)
+
+# Add the handler to the specific logger
+specific_logger.addHandler(specific_log_handler)
+
 QUERY_DURATION_SECONDS = 60  # Duration to run queries
 QUERY_INTERVAL_SECONDS = 1  # Time between queries
 
@@ -51,7 +67,7 @@ class ClientQueryPublisher:
 
         while time.time() - start_time < QUERY_DURATION_SECONDS:
             random_query = generate_random_query()
-            logging.warning(f"Publishing query: {random_query}")
+            specific_logger.warning(f"Publishing query: {random_query}")
             res: RecordMetadata = await self.kafka_producer.send_and_wait(KAFKA_QUERY_TOPIC,
                                                                           json.dumps(random_query).encode('utf-8'))
             self.record_query_timestamp(random_query['uuid'], res.timestamp)

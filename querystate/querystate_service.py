@@ -97,9 +97,7 @@ class QueryStateService(object):
                         self.state_store[operator_partition] = {}  # Initialize if missing
 
                     for key, value in kv_pairs.items():
-                        self.state_store[operator_partition][key] = (
-                                self.state_store[operator_partition].get(key, 0) + value
-                        )
+                        self.state_store[operator_partition][key] = value
             logging.warning(f"Epoch {epoch_counter} state updated")
 
             del self.epoch_deltas[epoch_counter]
@@ -174,6 +172,7 @@ class QueryStateService(object):
                         logging.warning(f"Message value: {msg.value}")
                         query=  json.loads(msg.value.decode('utf-8'))
                         response =  await self.get_query_state_response(query)
+                        # logging.warning(f"Response: {response}")
                         await self.send_response(response)
 
                 except TimeoutError:
@@ -192,16 +191,16 @@ class QueryStateService(object):
         response={"uuid": query_uuid}
 
         if query_type =="GET_STATE":
+            response ["epoch"]= self.latest_epoch_count
             response["state"] = self.state_store
         elif query_type == "GET_OPERATOR_STATE":
-            logging.warning(f'getting ycsb operator state')
             operator = query['operator']
             logging.warning(f'operator: {operator}')
             operator_data = {}
             for (op, partition), data in self.state_store.items():
                 if op == operator:
                     operator_data.update(data)
-            logging.warning(f'operator_data: {operator_data}')
+            response["epoch"] = self.latest_epoch_count
             response["operator_state"] = operator_data
         elif query_type == "GET_OPERATOR_PARTITION_STATE":
             operator = query['operator']
@@ -210,24 +209,22 @@ class QueryStateService(object):
             for (op, part), data in self.state_store.items():
                 if op == operator and part == partition:
                     operator_partition_data.update(data)
-            logging.warning(f'operator_partition_data: {operator_partition_data}')
+            response["epoch"] = self.latest_epoch_count
             response["operator_partition_state"] = operator_partition_data
         elif query_type == "GET_KEY_STATE":
             operator = query['operator']
             key = query['key']
             key_partition = self.get_partition(key)
-            logging.warning(f'key is :{key}, key type is {type(key)}, key_partition is {key_partition}')
             for(op, partition), data in self.state_store.items():
                 if op == operator and partition == key_partition:
                     operator_key_data = data.get(key, None)
-            logging.warning(f'operator_data for key:{key}:{operator_key_data}')
+            response["epoch"] = self.latest_epoch_count
             response["operator_key_state"] = operator_key_data
         return response
 
     def get_partition(self, key) -> int | None:
         if key is None:
             return None
-        logging.warning(f'key is :{key}, key type is {type(key)}, key_hash is {self.make_key_hashable(key)}')
         return self.make_key_hashable(key) % self.total_workers
 
     @staticmethod

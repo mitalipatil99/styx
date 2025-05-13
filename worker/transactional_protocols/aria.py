@@ -25,7 +25,6 @@ from worker.operator_state.aria.in_memory_state import InMemoryOperatorState
 from worker.operator_state.stateless import Stateless
 from worker.sequencer.sequencer import Sequencer
 
-
 DISCOVERY_HOST: str = os.environ['DISCOVERY_HOST']
 DISCOVERY_PORT: int = int(os.environ['DISCOVERY_PORT'])
 
@@ -491,6 +490,9 @@ class AriaProtocol(BaseTransactionalProtocol):
                             f'concurrency aborts for next epoch: {len(self.concurrency_aborts_everywhere)} '
                             f'abort rate: {abort_rate}'
                         )
+
+                        #log worker state for state benchmarking
+                        logging.warning(f' ||| State at Epoch |||: {self.sequencer.epoch_counter}: {self.local_state.get_delta_map()}')
 
                         # logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
                         #                 f'{round((epoch_end - epoch_start) * 1000, 4)}ms '

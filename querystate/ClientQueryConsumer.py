@@ -5,6 +5,22 @@ import logging
 from aiokafka import AIOKafkaConsumer
 from aiokafka.errors import KafkaConnectionError
 
+# Create a separate logger for the specific logs
+specific_logger = logging.getLogger("specific_logger")
+specific_logger.setLevel(logging.WARNING)
+
+# Create a file handler for the new logger
+specific_log_handler = logging.FileHandler("query_response.log")
+specific_log_handler.setLevel(logging.WARNING)
+
+# Define the format for the logs
+log_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+specific_log_handler.setFormatter(log_format)
+
+# Add the handler to the specific logger
+specific_logger.addHandler(specific_log_handler)
+
+
 KAFKA_QUERY_RESPONSE_TOPIC = "query_state_response"
 KAFKA_URL = 'localhost:9092'
 KAFKA_CONSUME_TIMEOUT_MS = 100
@@ -59,12 +75,12 @@ class ClientQueryConsumer:
             msg = await self.kafka_consumer.getmany(timeout_ms=KAFKA_CONSUME_TIMEOUT_MS)
             for tp, messages in msg.items():
                 for message in messages:
-                    logging.warning(f"Received message: {message}")
+                    # logging.warning(f"Received message: {message}")
                     response = json.loads(message.value.decode('utf-8'))
                     req_res_id = response['uuid']
                     self.record_query_timestamp(req_res_id,message.timestamp)
-                    logging.warning(f"Received response for query uuid: {req_res_id}")
-                    logging.warning(f':{response}')
+                    specific_logger.warning(f"Received response for query uuid: {req_res_id}")
+                    specific_logger.warning(f':{response}')
 
     def record_query_timestamp(self, query_id: str, timestamp: int) -> None:
         """Record query timestamp to CSV file.

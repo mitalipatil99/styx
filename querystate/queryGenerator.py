@@ -6,7 +6,7 @@ import random
 # Query type constants
 QUERY_TYPES = ["GET_OPERATOR_STATE", "GET_KEY_STATE", "GET_OPERATOR_PARTITION_STATE"]
 KEY_RANGE = (1, 100)  # Range for random keys
-PARTITION_RANGE = (1, 4)  # Range for random partitions
+PARTITION_RANGE = (0, 3)  # Range for random partitions
 
 def generate_query(query_type, operator="ycsb", **kwargs):
     query = {
