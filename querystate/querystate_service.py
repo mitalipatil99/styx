@@ -245,7 +245,10 @@ class QueryStateService(object):
         self.networking.start_networking_tasks()
 
     async def main(self):
-        self.kafka_producer = AIOKafkaProducer(bootstrap_servers=KAFKA_URL)
+        self.kafka_producer = AIOKafkaProducer(bootstrap_servers=KAFKA_URL,
+                                               compression_type="gzip",
+                                                max_batch_size=1048576,
+                                               )
         self.start_networking_tasks()
         self.query_processing_task = asyncio.create_task(self.start_query_processing())
         await self.start_tcp_service()

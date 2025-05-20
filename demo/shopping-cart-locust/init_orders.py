@@ -8,15 +8,15 @@ logging.basicConfig(level=logging.INFO,
                     datefmt='%I:%M:%S')
 logger = logging.getLogger(__name__)
 
-NUMBER_0F_ITEMS = 100_000
-ITEM_STARTING_STOCK = 1_000_000
+NUMBER_0F_ITEMS = 1000
+ITEM_STARTING_STOCK = 10000
 ITEM_PRICE = 1
-NUMBER_OF_USERS = 100_000
-USER_STARTING_CREDIT = 1_000_000
-NUMBER_OF_ORDERS = 100_000
+NUMBER_OF_USERS = 1000
+USER_STARTING_CREDIT = 1000
+NUMBER_OF_ORDERS = 1000
 N_PARTITIONS = 4
 
-ORDER_URL = PAYMENT_URL = STOCK_URL ="http://localhost:8000"
+ORDER_URL = PAYMENT_URL = STOCK_URL ="http://localhost:8001"
 
 
 async def populate_databases():
