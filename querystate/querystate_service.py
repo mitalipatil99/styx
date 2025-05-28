@@ -17,7 +17,6 @@ from styx.common.tcp_networking import NetworkingManager
 from styx.common.util.aio_task_scheduler import AIOTaskScheduler
 from struct import unpack
 
-
 SERVER_PORT = 8080
 
 KAFKA_URL: str = os.getenv('KAFKA_URL', None)
@@ -35,6 +34,7 @@ class QueryStateService(object):
         self.state_store = {}  #global state store
         self.latest_epoch_count = 1
         self.state_lock = asyncio.Lock()
+        self.task_queue = asyncio.PriorityQueue()  # PriorityQueue for tasks
 
         self.server_port = SERVER_PORT
 
@@ -49,8 +49,25 @@ class QueryStateService(object):
         self.query_processing_task: asyncio.Task | None = None
 
         self.kafka_producer: AIOKafkaProducer | None = None
+        self.kafka_consumer: AIOKafkaConsumer | None = None
 
         self.received_workers = asyncio.Event()
+
+    async def add_task_to_queue(self, timestamp: int, task_coro):
+        """Adds a task to the priority queue with the given timestamp."""
+        await self.task_queue.put((timestamp, task_coro))
+
+    async def process_task_queue(self):
+        while True:
+            timestamp, task_coro = await self.task_queue.get()
+            try:
+                logging.warning(f"task timestamp:{timestamp}")
+                logging.warning(f"task coro:{task_coro}")
+                asyncio.create_task(task_coro)
+            except Exception as e:
+                logging.error(f"Error processing task: {e}")
+            finally:
+                self.task_queue.task_done()
 
 
     async def query_state_controller(self, data: bytes):
@@ -87,6 +104,11 @@ class QueryStateService(object):
             self.epoch_deltas[epoch_counter][worker_id] = state_delta
             self.epoch_count[epoch_counter] += 1
 
+    async def check_and_merge_deltas(self):
+        if (self.latest_epoch_count in self.epoch_count and
+                self.epoch_count[self.latest_epoch_count] == self.total_workers):
+            await self.mergeDeltas_and_updateState(self.latest_epoch_count)
+
     async def mergeDeltas_and_updateState(self, epoch_counter):
             deltas = self.epoch_deltas[epoch_counter]
 
@@ -104,6 +126,32 @@ class QueryStateService(object):
             del self.epoch_count[epoch_counter]
             self.latest_epoch_count += 1
 
+    async def merge_scheduler(self):
+        while True:
+            await self.add_task_to_queue(asyncio.get_running_loop().time(), self.check_and_merge_deltas())
+            await asyncio.sleep(0.05)
+
+    async def kafka_query_scheduler(self):
+        while True:
+            await self.add_task_to_queue(asyncio.get_running_loop().time(), self.kafka_query_handler())
+            await asyncio.sleep(0.01)
+
+    async def kafka_query_handler(self):
+        try:
+            async with asyncio.timeout(KAFKA_CONSUME_TIMEOUT_MS / 1000):
+                msg: ConsumerRecord = await self.kafka_consumer.getone()
+                logging.warning(f"Received message from Kafka topic: {msg.topic}")
+                logging.warning(f"Message value: {msg.value}")
+                query = json.loads(msg.value.decode('utf-8'))
+                response = await self.get_query_state_response(query)
+                # logging.warning(f"Response: {response}")
+                await self.send_response(response)
+
+        except TimeoutError:
+            logging.info(f"No queries for {KAFKA_CONSUME_TIMEOUT_MS} ms")
+
+
+
     async def start_tcp_service(self):
 
         async def request_handler(reader: StreamReader, writer: StreamWriter):
@@ -112,7 +160,7 @@ class QueryStateService(object):
                     data = await reader.readexactly(8)
                     (size,) = unpack('>Q', data)
                     message = await reader.readexactly(size)
-                    self.aio_task_scheduler.create_task(self.query_state_controller(message))
+                    await self.add_task_to_queue(asyncio.get_event_loop().time(),self.query_state_controller(message))
             except asyncio.IncompleteReadError as e:
                 logging.warning(f"Client disconnected unexpectedly: {e}")
             except asyncio.CancelledError:
@@ -128,14 +176,12 @@ class QueryStateService(object):
             await server.serve_forever()
 
     async def start_query_processing(self):
-
-        kafka_consumer = AIOKafkaConsumer(bootstrap_servers=[KAFKA_URL])
         try:
             while True:
                 # start the kafka consumer
                 try:
                     logging.warning(f"Starting kafka consumer")
-                    await kafka_consumer.start()
+                    await self.kafka_consumer.start()
                     logging.warning(f"Starting kafka producer")
                     await self.kafka_producer.start()
                 except (UnknownTopicOrPartitionError, KafkaConnectionError):
@@ -144,7 +190,7 @@ class QueryStateService(object):
                     continue
                 break
             kafka_ingress_topic_name: str = 'query_processing'
-            topics = await kafka_consumer.topics()
+            topics = await self.kafka_consumer.topics()
             wait_for_topic = True
             while wait_for_topic:
                 wait_for_topic = False
@@ -153,35 +199,19 @@ class QueryStateService(object):
                 if not wait_for_topic:
                     break
                 await asyncio.sleep(1)
-                topics = await kafka_consumer.topics()
-            kafka_consumer.subscribe([kafka_ingress_topic_name])
+                topics = await self.kafka_consumer.topics()
+            self.kafka_consumer.subscribe([kafka_ingress_topic_name])
             # Kafka Consumer ready to consume
             logging.warning(f"Starting coroutine")
             await self.received_workers.wait()
+            asyncio.create_task(self.merge_scheduler())
+            asyncio.create_task(self.kafka_query_scheduler())
             while True:
-                # TODO fix for freshness
-                # logging.warning(f'{self.latest_epoch_count}')
-                # logging.warning(f'{self.epoch_count}')
-                if (self.latest_epoch_count in self.epoch_count and
-                        self.epoch_count[self.latest_epoch_count]==self.total_workers):
-                    await self.mergeDeltas_and_updateState(self.latest_epoch_count)
-                try:
-                    async with asyncio.timeout(KAFKA_CONSUME_TIMEOUT_MS / 1000):
-                        msg: ConsumerRecord = await kafka_consumer.getone()
-                        logging.warning(f"Received message from Kafka topic: {msg.topic}")
-                        logging.warning(f"Message value: {msg.value}")
-                        query=  json.loads(msg.value.decode('utf-8'))
-                        response =  await self.get_query_state_response(query)
-                        # logging.warning(f"Response: {response}")
-                        await self.send_response(response)
-
-                except TimeoutError:
-                    logging.info(f"No queries for {KAFKA_CONSUME_TIMEOUT_MS} ms")
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(1)
         except Exception as e:
             logging.error(traceback.format_exc())
         finally:
-            await kafka_consumer.stop()
+            await self.kafka_consumer.stop()
 
 
     async def get_query_state_response(self, query):
@@ -249,13 +279,13 @@ class QueryStateService(object):
                                                compression_type="gzip",
                                                 max_batch_size=1048576,
                                                )
+        self.kafka_consumer = AIOKafkaConsumer(bootstrap_servers=[KAFKA_URL])
         self.start_networking_tasks()
-        self.query_processing_task = asyncio.create_task(self.start_query_processing())
+        asyncio.create_task(self.process_task_queue())
+        asyncio.create_task(self.start_query_processing())
         await self.start_tcp_service()
 
 if __name__ == "__main__":
     query_state_service = QueryStateService()
     asyncio.run(query_state_service.main())
 
-
-# get partition using modulo

@@ -1,6 +1,7 @@
 import asyncio
 import os
 import concurrent.futures
+import time
 
 from timeit import default_timer as timer
 
@@ -354,6 +355,7 @@ class AriaProtocol(BaseTransactionalProtocol):
                         start_chain = 0.0
                         end_chain = 0.0
                         epoch_start = timer()
+                        epoch_start_state_log = time.time_ns() // 1_000_000
                         logging.info(f'{self.id} ||| Running {len(sequence)} functions...')
                         # async with self.snapshot_state_lock:
                         if sequence:
@@ -481,6 +483,7 @@ class AriaProtocol(BaseTransactionalProtocol):
                         self.take_snapshot(pool)
                         snap_end = timer()
                         epoch_end = timer()
+                        epoch_end_state_log = time.time_ns() // 1_000_000
                         epoch_latency = max(round((epoch_end - epoch_start) * 1000, 4), 1)
                         epoch_throughput = ((len(sequence) - len(concurrency_aborts)) * 1000) // epoch_latency # TPS
                         logging.info(
@@ -491,8 +494,8 @@ class AriaProtocol(BaseTransactionalProtocol):
                             f'abort rate: {abort_rate}'
                         )
 
-                        #log worker state for state benchmarking
-                        logging.warning(f' ||| State at Epoch |||: {self.sequencer.epoch_counter}: {self.local_state.get_delta_map()}')
+                        # #log worker state for state benchmarking
+                        # logging.warning(f' ||| State at Epoch |||: {self.sequencer.epoch_counter}: {self.local_state.get_delta_map()}')
 
                         # logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
                         #                 f'{round((epoch_end - epoch_start) * 1000, 4)}ms '
@@ -509,6 +512,10 @@ class AriaProtocol(BaseTransactionalProtocol):
                         state_delta = self.local_state.get_delta_map()
                         worker_id = self.id
                         epoch_counter = self.sequencer.epoch_counter
+
+                        logging.warning(f' ||| Epoch |||: {self.sequencer.epoch_counter} '
+                                        f' ||| start in milliseconds: {epoch_start_state_log}'
+                                        f' ||| end in milliseconds: {epoch_end_state_log}')
                         await self.send_state_delta(msg_type=MessageType.QueryMsg,
                                                     message=(worker_id, epoch_counter, state_delta),
                                                     serializer=Serializer.MSGPACK)

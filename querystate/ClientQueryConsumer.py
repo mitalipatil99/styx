@@ -31,7 +31,7 @@ class ClientQueryConsumer:
         self.kafka_consumer: AIOKafkaConsumer | None = None
         with open(CSV_FILE_PATH, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(['uuid', 'produceTimeStamp'])
+            writer.writerow(['uuid', 'consumeTimeStamp'])
 
 
     async def start(self):
@@ -79,7 +79,7 @@ class ClientQueryConsumer:
                     response = json.loads(message.value.decode('utf-8'))
                     req_res_id = response['uuid']
                     self.record_query_timestamp(req_res_id,message.timestamp)
-                    specific_logger.warning(f"Received response for query uuid: {req_res_id}")
+                    # specific_logger.warning(f"Received response for query uuid: {req_res_id}")
                     specific_logger.warning(f':{response}')
 
     def record_query_timestamp(self, query_id: str, timestamp: int) -> None:
