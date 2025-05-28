@@ -2,7 +2,7 @@ import asyncio
 import json
 import socket
 import traceback
-import uuid
+import time
 import os
 from asyncio import StreamReader, StreamWriter
 
@@ -61,8 +61,8 @@ class QueryStateService(object):
         while True:
             timestamp, task_coro = await self.task_queue.get()
             try:
-                logging.warning(f"task timestamp:{timestamp}")
-                logging.warning(f"task coro:{task_coro}")
+                # logging.warning(f"task timestamp:{timestamp}")
+                # logging.warning(f"task coro:{task_coro}")
                 asyncio.create_task(task_coro)
             except Exception as e:
                 logging.error(f"Error processing task: {e}")
@@ -103,6 +103,8 @@ class QueryStateService(object):
 
             self.epoch_deltas[epoch_counter][worker_id] = state_delta
             self.epoch_count[epoch_counter] += 1
+            await self.check_and_merge_deltas()
+
 
     async def check_and_merge_deltas(self):
         if (self.latest_epoch_count in self.epoch_count and
@@ -120,16 +122,16 @@ class QueryStateService(object):
 
                     for key, value in kv_pairs.items():
                         self.state_store[operator_partition][key] = value
-            logging.warning(f"Epoch {epoch_counter} state updated")
+            logging.warning(f"Epoch {epoch_counter} state updated @ { time.time_ns() // 1_000_000}")
 
             del self.epoch_deltas[epoch_counter]
             del self.epoch_count[epoch_counter]
             self.latest_epoch_count += 1
 
-    async def merge_scheduler(self):
-        while True:
-            await self.add_task_to_queue(asyncio.get_running_loop().time(), self.check_and_merge_deltas())
-            await asyncio.sleep(0.05)
+    # async def merge_scheduler(self):
+    #     while True:
+    #         await self.add_task_to_queue(asyncio.get_running_loop().time(), self.check_and_merge_deltas())
+    #         await asyncio.sleep(0.05)
 
     async def kafka_query_scheduler(self):
         while True:
@@ -204,7 +206,7 @@ class QueryStateService(object):
             # Kafka Consumer ready to consume
             logging.warning(f"Starting coroutine")
             await self.received_workers.wait()
-            asyncio.create_task(self.merge_scheduler())
+            # asyncio.create_task(self.merge_scheduler())
             asyncio.create_task(self.kafka_query_scheduler())
             while True:
                 await asyncio.sleep(1)

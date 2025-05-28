@@ -1,77 +1,83 @@
+# latency metric for the query : resposne - request.
+# get latency between epoch end time in worker logs and the epoch state delta completion update timestamp in query state logs to see how late the eppch updates happen from worker to
+# state container, get the overall average also.
+import re
+
 import pandas as pd
-import numpy as np
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
 
-PRODUCE_CSV = "query_timestamps_produce.csv"
-CONSUME_CSV = "query_timestamps_consume.csv"
-OUTPUT_LATENCY_METRICS = "latency_metrics.json"
 
-def calculate_latency_metrics():
 
-    produce_df = pd.read_csv(PRODUCE_CSV)
-    consume_df = pd.read_csv(CONSUME_CSV)
+class CalculateMetrics:
 
-    # Merge the two datasets on the 'uuid' column
-    merged_df = produce_df.merge(consume_df, on='uuid', how='right',suffixes=('_produce', '_consume'))
+    def getLatencyofQueries(self):
+        # Load the CSV files
+        consume_df = pd.read_csv('query_timestamps_consume.csv')  # Replace with your actual file name
+        produce_df = pd.read_csv('query_timestamps_produce.csv')  # Replace with your actual file name
 
-    print(merged_df.head(15))
-    # Calculate latency for each record
-    merged_df['latency_ms'] = merged_df['produceTimeStamp_consume'] - merged_df['produceTimeStamp_produce']
-    print(merged_df.head(15))
-    # Sort rows by the produced timestamp for chronological order
-    merged_df = merged_df.sort_values(by='produceTimeStamp_produce')
+        # Merge both dataframes on the uuid column
+        merged_df = pd.merge(consume_df, produce_df, on='uuid')
 
-    print(merged_df.head(15))
+        # Calculate latency
+        merged_df['latency_ms'] = merged_df['consumeTimeStamp'] - merged_df['produceTimeStamp']
 
-    # # Compute latency metrics
-    # latency_metrics = {
-    #     "latency (ms)": {
-    #         10: np.percentile(merged_df['latency_ms'], 10),
-    #         20: np.percentile(merged_df['latency_ms'], 20),
-    #         30: np.percentile(merged_df['latency_ms'], 30),
-    #         40: np.percentile(merged_df['latency_ms'], 40),
-    #         50: np.percentile(merged_df['latency_ms'], 50),  # Median
-    #         60: np.percentile(merged_df['latency_ms'], 60),
-    #         70: np.percentile(merged_df['latency_ms'], 70),
-    #         80: np.percentile(merged_df['latency_ms'], 80),
-    #         90: np.percentile(merged_df['latency_ms'], 90),
-    #         95: np.percentile(merged_df['latency_ms'], 95),
-    #         99: np.percentile(merged_df['latency_ms'], 99),
-    #         "max": merged_df['latency_ms'].max(),
-    #         "min": merged_df['latency_ms'].min(),
-    #         "mean": merged_df['latency_ms'].mean(),
-    #     },
-    #     "total_messages": len(merged_df),
-    #     "missed_messages": 0  # Since we merged, no UUIDs are missing here
-    # }
-    # percentiles = [10, 50, 90, 95, 99]
-    # latency_percentiles = np.percentile(merged_df['latency_ms'], percentiles)
-    #
-    plt.figure(figsize=(12, 6))
-    plt.hist(merged_df['latency_ms'], bins=50, color='skyblue', edgecolor='k', alpha=0.7)
-    # plt.axvline(latency_percentiles[2], color='r', linestyle='--', label=f"90th Percentile: {latency_percentiles[2]:.2f} ms")
-    # plt.axvline(latency_percentiles[3], color='g', linestyle='--', label=f"95th Percentile: {latency_percentiles[3]:.2f} ms")
-    # plt.axvline(latency_percentiles[4], color='orange', linestyle='--', label=f"99th Percentile: {latency_percentiles[4]:.2f} ms")
-    #
-    # # Adding labels and title
-    plt.title("Query Latency Distribution")
-    plt.xlabel("Latency (ms)")
-    plt.ylabel("Frequency")
-    # plt.legend()
-    # plt.grid(axis='y', linestyle='--', linewidth=0.7)
-    #
-    # # Save and show
-    plt.savefig("query_latency_distribution.png", dpi=300)
-    # print("Latency plot saved as 'query_latency_distribution.png'")
-    plt.show()
-    #
-    #
-    # # Save latency metrics to a JSON file
-    # import json
-    # with open(OUTPUT_LATENCY_METRICS, 'w', encoding='utf-8') as f:
-    #     json.dump(latency_metrics, f, ensure_ascii=False, indent=4)
-    #
-    # print(f"Latency metrics generated and saved to {OUTPUT_LATENCY_METRICS}")
+        # Sort by produce timestamp for better plotting
+        merged_df.sort_values(by='produceTimeStamp', inplace=True)
 
-if __name__ == "__main__":
-    calculate_latency_metrics()
+        # Plot the latency
+        plt.figure(figsize=(12, 6))
+        plt.plot(merged_df['produceTimeStamp'], merged_df['latency_ms'], marker='o', linestyle='-')
+        plt.xlabel('Produce Timestamp')
+        plt.ylabel('Latency (ms)')
+        plt.title('Query Latency (Consume - Produce Timestamp)')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    def getEpochLatency(self):
+        querystate_log_path = '/home/mitalipatil/PycharmProjects/styx/querystate-logs.log'
+        worker_log_path = '/home/mitalipatil/PycharmProjects/styx/worker-logs.log'
+
+        # Regex patterns
+        querystate_pattern = re.compile(r'Epoch (\d+) state updated @ (\d+)')
+        worker_pattern = re.compile(r'\|\|\| Epoch \|\|\|: (\d+).*?Ended @ \(ms\): (\d+)')
+
+        # Parse querystate log
+        epoch_updates = {}
+        with open(querystate_log_path, 'r') as f:
+            for line in f:
+                match = querystate_pattern.search(line)
+                if match:
+                    epoch = int(match.group(1))
+                    update_ts = int(match.group(2))
+                    epoch_updates[epoch] = update_ts
+
+        # Parse worker log
+        epoch_ends = {}
+        with open(worker_log_path, 'r') as f:
+            for line in f:
+                match = worker_pattern.search(line)
+                if match:
+                    epoch = int(match.group(1))
+                    end_ts = int(match.group(2))
+                    epoch_ends[epoch] = end_ts
+
+        # Compute latencies
+        epochs = sorted(set(epoch_updates.keys()) & set(epoch_ends.keys()))
+        latencies = [epoch_updates[e] - epoch_ends[e] for e in epochs]
+
+        # Plot
+        plt.figure(figsize=(10, 10))
+        plt.plot(epochs, latencies, marker='o', linestyle='-', color='blue')
+        plt.xlabel('Epoch')
+        plt.ylabel('State Update Latency (ms)')
+        plt.title('Epoch State Update Latency')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+
+if __name__ == '__main__':
+    calculator = CalculateMetrics()
+    # calculator.getLatencyofQueries()
+    calculator.getEpochLatency()

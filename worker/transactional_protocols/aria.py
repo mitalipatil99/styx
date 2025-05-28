@@ -514,8 +514,8 @@ class AriaProtocol(BaseTransactionalProtocol):
                         epoch_counter = self.sequencer.epoch_counter
 
                         logging.warning(f' ||| Epoch |||: {self.sequencer.epoch_counter} '
-                                        f' ||| start in milliseconds: {epoch_start_state_log}'
-                                        f' ||| end in milliseconds: {epoch_end_state_log}')
+                                        f' ||| Started @ (ms): {epoch_start_state_log}'
+                                        f' ||| Ended @ (ms): {epoch_end_state_log}')
                         await self.send_state_delta(msg_type=MessageType.QueryMsg,
                                                     message=(worker_id, epoch_counter, state_delta),
                                                     serializer=Serializer.MSGPACK)
