@@ -25,7 +25,7 @@ specific_log_handler.setFormatter(log_format)
 # Add the handler to the specific logger
 specific_logger.addHandler(specific_log_handler)
 
-QUERY_DURATION_SECONDS = 100  # Duration to run queries
+QUERY_DURATION_SECONDS = 120  # Duration to run queries
 QUERY_INTERVAL_SECONDS = 5  # Time between queries
 
 KAFKA_QUERY_TOPIC = "query_processing"

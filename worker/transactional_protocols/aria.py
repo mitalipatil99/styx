@@ -494,7 +494,7 @@ class AriaProtocol(BaseTransactionalProtocol):
                             f'abort rate: {abort_rate}'
                         )
 
-                        # #log worker state for state benchmarking
+                        # #log worker state for correctness Verification
                         # logging.warning(f' ||| State at Epoch |||: {self.sequencer.epoch_counter}: {self.local_state.get_delta_map()}')
 
                         # logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
