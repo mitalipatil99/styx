@@ -479,13 +479,33 @@ class AriaProtocol(BaseTransactionalProtocol):
                         )
                         await self.wait_responses_to_be_sent.wait()
                         self.cleanup_after_epoch()
+                        # epoch_end_state_log = time.time_ns() // 1_000_000
+
+                        # logging.warning(
+                        #     f' ||| State at Epoch |||: {self.sequencer.epoch_counter}: {self.local_state.get_delta_map()}')
+
+                        state_delta = self.local_state.get_delta_map()
+                        worker_id = self.id
+                        epoch_counter = self.sequencer.epoch_counter
+
+                        # logging.warning(f' ||| Epoch |||: {self.sequencer.epoch_counter} '
+                        #                 f' ||| Started @ (ms): {epoch_start_state_log}'
+                        #                 f' ||| Ended @ (ms): {epoch_end_state_log}')
+                        await self.send_state_delta(msg_type=MessageType.QueryMsg,
+                                                    message=(worker_id, epoch_counter, state_delta),
+                                                    serializer=Serializer.MSGPACK)
+
+
+
                         snap_start = timer()
                         self.take_snapshot(pool)
                         snap_end = timer()
+
                         epoch_end = timer()
-                        epoch_end_state_log = time.time_ns() // 1_000_000
+
                         epoch_latency = max(round((epoch_end - epoch_start) * 1000, 4), 1)
                         epoch_throughput = ((len(sequence) - len(concurrency_aborts)) * 1000) // epoch_latency # TPS
+
                         logging.info(
                             f'{self.id} ||| Epoch: {self.sequencer.epoch_counter - 1} done in '
                             f'{epoch_latency}ms '
@@ -494,35 +514,19 @@ class AriaProtocol(BaseTransactionalProtocol):
                             f'abort rate: {abort_rate}'
                         )
 
-                        # #log worker state for correctness Verification
-                        # logging.warning(f' ||| State at Epoch |||: {self.sequencer.epoch_counter}: {self.local_state.get_delta_map()}')
 
-                        # logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
-                        #                 f'{round((epoch_end - epoch_start) * 1000, 4)}ms '
-                        #                 f'function_running_time: {self.function_running_time}\n'
-                        #                 f'chain_completion_time: {self.chain_completion_time}\n'
-                        #                 f'serialization_time: {self.serialization_time}\n'
-                        #                 f'sequencing_time: {self.sequencing_time}\n'
-                        #                 f'conflict_resolution_time: {self.conflict_resolution_time}\n'
-                        #                 f'commit_time: {self.commit_time}\n'
-                        #                 f'sync_time: {self.sync_time}\n'
-                        #                 f'snapshot_time: {self.snapshot_time}\n'
-                        #                 f'fallback_time: {self.fallback_time}\n')
 
-                        state_delta = self.local_state.get_delta_map()
-                        worker_id = self.id
-                        epoch_counter = self.sequencer.epoch_counter
+                        # logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} metrics:\n'
+                        #                 f'Total time: {round((epoch_end - epoch_start) * 1000, 4)}ms\n'
+                        #                 f'WAL time: {round((end_wal - start_wal) * 1000, 4)}ms\n'
+                        #                 f'Function running time: {round((end_func - start_func) * 1000, 4)}ms\n'
+                        #                 f'Chain completion time: {round((end_chain - start_chain) * 1000, 4)}ms\n'
+                        #                 f'Sync time: {round(sync_time * 1000, 4)}ms\n'
+                        #                 f'Conflict resolution time: {round((conflict_resolution_end - conflict_resolution_start) * 1000, 4)}ms\n'
+                        #                 f'Commit time: {round((end_commit - start_commit) * 1000, 4)}ms\n'
+                        #                 f'Fallback time: {round((end_fallback - start_fallback) * 1000, 4)}ms\n'
+                        #                 f'Snapshot time: {round((snap_end - snap_start) * 1000, 4)}ms')
 
-                        logging.warning(f' ||| Epoch |||: {self.sequencer.epoch_counter} '
-                                        f' ||| Started @ (ms): {epoch_start_state_log}'
-                                        f' ||| Ended @ (ms): {epoch_end_state_log}')
-                        await self.send_state_delta(msg_type=MessageType.QueryMsg,
-                                                    message=(worker_id, epoch_counter, state_delta),
-                                                    serializer=Serializer.MSGPACK)
-
-                        self.cleanup_after_epoch()
-                        # start_sn = timer()
-                        self.take_snapshot(pool)
 
                         await self.sync_workers(msg_type=MessageType.SyncCleanup,
                                                 message=(self.id,
