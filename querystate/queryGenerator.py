@@ -4,7 +4,7 @@ import uuid
 import random
 
 # Query type constants
-QUERY_TYPES = ["GET_OPERATOR_STATE", "GET_KEY_STATE", "GET_OPERATOR_PARTITION_STATE"]
+QUERY_TYPES = ["GET_KEY_STATE"]
 KEY_RANGE = (1, 100)  # Range for random keys
 PARTITION_RANGE = (0, 4)  # Range for random partitions
 operator_type=["ycsb"]

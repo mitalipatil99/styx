@@ -221,44 +221,101 @@ class QueryStateService(object):
         finally:
             await self.kafka_consumer.stop()
 
-
     async def get_query_state_response(self, query):
-        logging.warning(f'query received: {query}')
-        query_type = query['type']
-        query_uuid = query['uuid']
-        response={"uuid": query_uuid}
+        """Process a state query and return the response."""
+        logging.info(f'Processing query: {query}')
 
-        if query_type =="GET_STATE":
-            response ["epoch"]= self.latest_epoch_count
-            response["state"] = self.state_store
-        elif query_type == "GET_OPERATOR_STATE":
-            operator = query['operator']
-            logging.warning(f'operator: {operator}')
-            operator_data = {}
-            for (op, partition), data in self.state_store.items():
-                if op == operator:
-                    operator_data.update(data)
-            response["epoch"] = self.latest_epoch_count
-            response["operator_state"] = operator_data
-        elif query_type == "GET_OPERATOR_PARTITION_STATE":
-            operator = query['operator']
-            partition = query['partition']
-            operator_partition_data = {}
-            for (op, part), data in self.state_store.items():
-                if op == operator and part == partition:
-                    operator_partition_data.update(data)
-            response["epoch"] = self.latest_epoch_count
-            response["operator_partition_state"] = operator_partition_data
-        elif query_type == "GET_KEY_STATE":
-            operator = query['operator']
-            key = query['key']
-            key_partition = self.get_partition(key)
-            for(op, partition), data in self.state_store.items():
-                if op == operator and partition == key_partition:
-                    operator_key_data = data.get(key, None)
-            response["epoch"] = self.latest_epoch_count
-            response["operator_key_state"] = operator_key_data
+        query_type = query.get('type')
+        query_uuid = query.get('uuid')
+        response = {"uuid": query_uuid}
+
+        try:
+            # The latest_epoch_count represents the NEXT epoch we're expecting
+            # So the latest COMPLETED epoch is latest_epoch_count - 1
+            completed_epoch = self.latest_epoch_count - 1
+
+            current_time_ms = time.time_ns() // 1_000_000
+
+            # Get timestamp for the completed epoch
+            epoch_timestamps = self.received_epoch_timestamps.get(completed_epoch, [])
+            if epoch_timestamps:
+                latest_epoch_ts = epoch_timestamps[0]  # We store max timestamp here after merging
+                freshness_ms = current_time_ms - latest_epoch_ts
+            else:
+                # No completed epochs yet
+                freshness_ms = 0
+            match query_type:
+                case "GET_STATE":
+                    response.update({
+                        "epoch": self.latest_epoch_count - 1,
+                        "state": self.state_store,
+                        "freshness(ms)": freshness_ms
+                    })
+
+                case "GET_OPERATOR_STATE":
+                    operator = query.get('operator')
+                    operator_data = self.get_operator_state(operator)
+                    response.update({
+                        "epoch": self.latest_epoch_count - 1,
+                        "operator_state": operator_data,
+                        "freshness(ms)": freshness_ms
+                    })
+
+                case "GET_OPERATOR_PARTITION_STATE":
+                    operator = query.get('operator')
+                    partition = query.get('partition')
+                    operator_partition_data = self.get_operator_partition_state(operator, partition)
+                    response.update({
+                        "epoch": self.latest_epoch_count - 1,
+                        "operator_partition_state": operator_partition_data,
+                        "freshness(ms)": freshness_ms
+                    })
+
+                case "GET_KEY_STATE":
+                    operator = query.get('operator')
+                    key = query.get('key')
+                    key_state = self.get_key_state(operator, key)
+                    response.update({
+                        "epoch": self.latest_epoch_count - 1,
+                        "operator_key_state": key_state,
+                        "freshness(ms)": freshness_ms
+                    })
+
+                case _:
+                    response["error"] = f"Unknown query type: {query_type}"
+
+        except Exception as e:
+            logging.error(f"Error processing query {query_type}: {e}")
+            response["error"] = str(e)
+
         return response
+
+    def get_operator_state(self, operator: str) :
+        """Get all state for a specific operator across all partitions."""
+        operator_data = {}
+        for (op, partition), data in self.state_store.items():
+            if op == operator:
+                operator_data.update(data)
+        return operator_data
+
+    def get_operator_partition_state(self, operator: str, partition: int):
+        """Get state for a specific operator partition."""
+        operator_partition_data = {}
+        for (op, part), data in self.state_store.items():
+            if op == operator and part == partition:
+                operator_partition_data.update(data)
+        return operator_partition_data
+
+    def get_key_state(self, operator: str, key) :
+        """Get state for a specific key within an operator."""
+        if not self.total_workers:
+            return None
+        operator_key_data = None
+        key_partition = self.get_partition(key)
+        for (op, partition), data in self.state_store.items():
+            if op == operator and partition == key_partition:
+                operator_key_data = data.get(key, None)
+        return operator_key_data
 
     def get_partition(self, key) -> int | None:
         if key is None:
@@ -276,8 +333,15 @@ class QueryStateService(object):
                 raise NonSupportedKeyType()
 
     async def send_response(self, response):
-        logging.warning("sending response to query topic")
-        await self.kafka_producer.send_and_wait(KAFKA_QUERY_RESPONSE_TOPIC, json.dumps(response).encode('utf-8'))
+        """Send response back to Kafka."""
+        try:
+            logging.info("Sending response to query topic")
+            await self.kafka_producer.send_and_wait(
+                KAFKA_QUERY_RESPONSE_TOPIC,
+                json.dumps(response).encode('utf-8')
+            )
+        except Exception as e:
+            logging.error(f"Error sending response: {e}")
 
     def start_networking_tasks(self):
         self.networking.start_networking_tasks()

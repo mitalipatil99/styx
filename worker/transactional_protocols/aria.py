@@ -221,7 +221,7 @@ class AriaProtocol(BaseTransactionalProtocol):
                 logging.warning("Snapshot currently supported only for in-memory and incremental operator state")
 
 
-    async def send_state_delta(self,
+    async def send_state_delta_message(self,
                            msg_type: MessageType,
                            message: tuple | bytes,
                            serializer: Serializer = Serializer.MSGPACK):
@@ -230,6 +230,18 @@ class AriaProtocol(BaseTransactionalProtocol):
                                                msg=message,
                                                msg_type=msg_type,
                                                serializer=serializer)
+    def send_state_delta(self):
+        state_delta = self.local_state.get_delta_map()
+        worker_id = self.id
+        epoch_counter = self.sequencer.epoch_counter
+        epoch_end_ts_state = time.time_ns() // 1_000_000
+        asyncio.create_task(
+            self.send_state_delta_message(
+                msg_type=MessageType.QueryMsg,
+                message=(worker_id, epoch_counter, state_delta, epoch_end_ts_state),
+                serializer=Serializer.MSGPACK
+            )
+        )
 
 
     async def communication_protocol(self):
@@ -355,7 +367,7 @@ class AriaProtocol(BaseTransactionalProtocol):
                         start_chain = 0.0
                         end_chain = 0.0
                         epoch_start = timer()
-                        epoch_start_state_log = time.time_ns() // 1_000_000
+                        # epoch_start_state_log = time.time_ns() // 1_000_000
                         logging.info(f'{self.id} ||| Running {len(sequence)} functions...')
                         # async with self.snapshot_state_lock:
                         if sequence:
@@ -480,23 +492,8 @@ class AriaProtocol(BaseTransactionalProtocol):
                         await self.wait_responses_to_be_sent.wait()
                         self.cleanup_after_epoch()
 
-                        # logging.warning(
-                        #     f' ||| State at Epoch |||: {self.sequencer.epoch_counter}: {self.local_state.get_delta_map()}')
-
-                        state_delta = self.local_state.get_delta_map()
-                        worker_id = self.id
-                        epoch_counter = self.sequencer.epoch_counter
-                        epoch_end_ts_state = time.time_ns() // 1_000_000  # epoch_end timestamp in ms
-
-                        # logging.warning(f' ||| Epoch |||: {self.sequencer.epoch_counter} '
-                        #                 f' ||| Started @ (ms): {epoch_start_state_log}'
-                        #                 f' ||| Ended @ (ms): {epoch_end_state_log}')
-                        await self.send_state_delta(msg_type=MessageType.QueryMsg,
-                                                    message=(worker_id, epoch_counter, state_delta, epoch_end_ts_state),
-                                                    serializer=Serializer.MSGPACK)
-                        # remove snap
-                        # styx - snap
-                        # styx - snap + querystate
+                        logging.warning(f'state delta @ Epoch {self.sequencer.epoch_counter} : {self.local_state.get_delta_map()}')
+                        self.send_state_delta()
 
                         snap_start = timer()
                         # self.take_snapshot(pool)
