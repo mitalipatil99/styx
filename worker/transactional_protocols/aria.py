@@ -479,7 +479,6 @@ class AriaProtocol(BaseTransactionalProtocol):
                         )
                         await self.wait_responses_to_be_sent.wait()
                         self.cleanup_after_epoch()
-                        # epoch_end_state_log = time.time_ns() // 1_000_000
 
                         # logging.warning(
                         #     f' ||| State at Epoch |||: {self.sequencer.epoch_counter}: {self.local_state.get_delta_map()}')
@@ -487,18 +486,20 @@ class AriaProtocol(BaseTransactionalProtocol):
                         state_delta = self.local_state.get_delta_map()
                         worker_id = self.id
                         epoch_counter = self.sequencer.epoch_counter
+                        epoch_end_ts_state = time.time_ns() // 1_000_000  # epoch_end timestamp in ms
 
                         # logging.warning(f' ||| Epoch |||: {self.sequencer.epoch_counter} '
                         #                 f' ||| Started @ (ms): {epoch_start_state_log}'
                         #                 f' ||| Ended @ (ms): {epoch_end_state_log}')
                         await self.send_state_delta(msg_type=MessageType.QueryMsg,
-                                                    message=(worker_id, epoch_counter, state_delta),
+                                                    message=(worker_id, epoch_counter, state_delta, epoch_end_ts_state),
                                                     serializer=Serializer.MSGPACK)
-
-
+                        # remove snap
+                        # styx - snap
+                        # styx - snap + querystate
 
                         snap_start = timer()
-                        self.take_snapshot(pool)
+                        # self.take_snapshot(pool)
                         snap_end = timer()
 
                         epoch_end = timer()

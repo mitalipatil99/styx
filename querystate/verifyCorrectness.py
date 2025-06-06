@@ -56,5 +56,5 @@ def merge_deltas_and_update_state(epoch_counter):
 
 if __name__ == '__main__':
     parse_state_log()
-    print(epoch_state_store.get(1281, None))
+    print(epoch_state_store.get(2005, None))
 

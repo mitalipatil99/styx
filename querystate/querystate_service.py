@@ -31,6 +31,7 @@ class QueryStateService(object):
         self.total_workers = None # Total number of workers
         self.epoch_deltas = {}  # Stores {epoch: {worker_id: delta}}
         self.epoch_count = {}  # Tracks number of deltas received per epoch
+        self.received_epoch_timestamps = {} # track the received timetamps of committed epochs in styx
         self.state_store = {}  #global state store
         self.latest_epoch_count = 1
         self.state_lock = asyncio.Lock()
@@ -82,15 +83,15 @@ class QueryStateService(object):
                 self.received_workers.set()
             case MessageType.QueryMsg:
                 # Decode the message
-                worker_id, epoch_counter, state_delta = self.networking.decode_message(data)
+                worker_id, epoch_counter, state_delta ,epoch_end_ts_state = self.networking.decode_message(data)
                 logging.warning(f"Received state delta from worker {worker_id} for epoch {epoch_counter}")
 
-                await self.receive_delta(worker_id,epoch_counter,state_delta)
+                await self.receive_delta(worker_id,epoch_counter,state_delta,epoch_end_ts_state)
 
             case _:  # Handle unsupported message types
                 logging.error(f"QUERY STATE SERVER: Unsupported message type: {message_type}")
 
-    async def receive_delta(self, worker_id, epoch_counter, state_delta):
+    async def receive_delta(self, worker_id, epoch_counter, state_delta,epoch_end_ts_state):
         """add workerid , epoch counter , state delta to a dictionary
            maintain a [workerid] [epoch] count , and once count reaches the predefined number of workers,
            lock state and merge all deltas and update the state store.
@@ -100,8 +101,10 @@ class QueryStateService(object):
             if epoch_counter not in self.epoch_deltas:
                 self.epoch_deltas[epoch_counter]={}
                 self.epoch_count[epoch_counter] = 0
+                self.received_epoch_timestamps[epoch_counter] = []
 
             self.epoch_deltas[epoch_counter][worker_id] = state_delta
+            self.received_epoch_timestamps[epoch_counter].append(epoch_end_ts_state)
             self.epoch_count[epoch_counter] += 1
             await self.check_and_merge_deltas()
 
@@ -113,6 +116,9 @@ class QueryStateService(object):
 
     async def mergeDeltas_and_updateState(self, epoch_counter):
             deltas = self.epoch_deltas[epoch_counter]
+            if self.received_epoch_timestamps[epoch_counter]:
+                styx_epoch_commit_ts = max(self.received_epoch_timestamps[epoch_counter])
+                self.received_epoch_timestamps[epoch_counter] = [styx_epoch_commit_ts]
 
             # Merge deltas directly into state_store
             for worker_delta in deltas.values():
@@ -122,7 +128,7 @@ class QueryStateService(object):
 
                     for key, value in kv_pairs.items():
                         self.state_store[operator_partition][key] = value
-            logging.warning(f"Epoch {epoch_counter} state updated @ { time.time_ns() // 1_000_000}")
+            logging.warning(f"Epoch {epoch_counter} state updated in styx @ {self.received_epoch_timestamps[epoch_counter]}")
 
             del self.epoch_deltas[epoch_counter]
             del self.epoch_count[epoch_counter]
