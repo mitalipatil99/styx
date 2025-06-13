@@ -2,6 +2,7 @@ import asyncio
 import os
 import concurrent.futures
 import time
+import zstandard as zstd
 
 from timeit import default_timer as timer
 
@@ -224,24 +225,35 @@ class AriaProtocol(BaseTransactionalProtocol):
     async def send_state_delta_message(self,
                            msg_type: MessageType,
                            message: tuple | bytes,
-                           serializer: Serializer = Serializer.MSGPACK):
+                           serializer: Serializer = Serializer.NONE):
 
-            await self.networking.send_message(STATE_HOST, STATE_PORT,
-                                               msg=message,
+        if isinstance(message, tuple):
+            serialized_message = msgpack_serialization(message)  # tuple -> bytes
+        else:
+            serialized_message = message  # already bytes
+
+        # Step 2: Then compress
+        compressor = zstd.ZstdCompressor()
+        compressed_message = compressor.compress(serialized_message)
+
+        await self.networking.send_message(STATE_HOST, STATE_PORT,
+                                               msg=compressed_message,
                                                msg_type=msg_type,
-                                               serializer=serializer)
-    def send_state_delta(self):
-        state_delta = self.local_state.get_delta_map()
-        worker_id = self.id
-        epoch_counter = self.sequencer.epoch_counter
-        epoch_end_ts_state = time.time_ns() // 1_000_000
-        asyncio.create_task(
-            self.send_state_delta_message(
-                msg_type=MessageType.QueryMsg,
-                message=(worker_id, epoch_counter, state_delta, epoch_end_ts_state),
-                serializer=Serializer.MSGPACK
-            )
-        )
+                                               serializer=serializer.NONE)
+
+    # def send_state_delta(self):
+    #     state_delta = self.local_state.get_delta_map()
+    #     worker_id = self.id
+    #     epoch_counter = self.sequencer.epoch_counter
+    #     epoch_end_ts_state = time.time_ns() // 1_000_000
+    #     # logging.warning(f"Sending state delta of worker {worker_id} at epoch {epoch_counter} @ map{state_delta} ")
+    #     asyncio.create_task(
+    #         self.send_state_delta_message(
+    #             msg_type=MessageType.QueryMsg,
+    #             message=(worker_id, epoch_counter, state_delta, epoch_end_ts_state),
+    #             serializer=Serializer.MSGPACK
+    #         )
+    #     )
 
 
     async def communication_protocol(self):
@@ -492,8 +504,21 @@ class AriaProtocol(BaseTransactionalProtocol):
                         await self.wait_responses_to_be_sent.wait()
                         self.cleanup_after_epoch()
 
-                        logging.warning(f'state delta @ Epoch {self.sequencer.epoch_counter} : {self.local_state.get_delta_map()}')
-                        self.send_state_delta()
+                        # logging.warning(f'state delta @ Epoch {self.sequencer.epoch_counter} : {self.local_state.get_delta_map()}')
+                        # self.send_state_delta()
+
+                        state_delta = self.local_state.get_delta_map()
+                        worker_id = self.id
+                        epoch_counter = self.sequencer.epoch_counter
+                        epoch_end_ts_state = time.time_ns() // 1_000_000
+                        # logging.warning(f"Sending state delta of worker {worker_id} at epoch {epoch_counter} @ map{state_delta} ")
+                        self.aio_task_scheduler.create_task(
+                            self.send_state_delta_message(
+                                msg_type=MessageType.QueryMsg,
+                                message=(worker_id, epoch_counter, state_delta, epoch_end_ts_state),
+                                serializer=Serializer.NONE
+                            )
+                        )
 
                         snap_start = timer()
                         # self.take_snapshot(pool)

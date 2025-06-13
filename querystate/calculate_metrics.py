@@ -151,10 +151,10 @@ class CalculateMetrics:
 
 if __name__ == '__main__':
     calculator = CalculateMetrics()
-    # calculator.getLatencyofQueries()
+    calculator.getLatencyofQueries()
     # calculator.getEpochLatency()
-    calculator.compute_freshness_report(
-        uuid_csv_file='query_timestamps_consume.csv',
-        response_log_file='query_response.log',
-        worker_log_file='/home/mitalipatil/PycharmProjects/styx/worker-logs.log'
-    )
+    # calculator.compute_freshness_report(
+    #     uuid_csv_file='query_timestamps_consume.csv',
+    #     response_log_file='query_response.log',
+    #     worker_log_file='/home/mitalipatil/PycharmProjects/styx/worker-logs.log'
+    # )

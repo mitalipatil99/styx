@@ -2,13 +2,14 @@ import asyncio
 import json
 import logging
 import csv
+import os
+import sys
 import time
 from aiokafka import AIOKafkaProducer
 from aiokafka.errors import KafkaConnectionError
 from aiokafka.structs import RecordMetadata
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from querystate.queryGenerator import generate_random_query
-
 
 # Create a separate logger for the specific logs
 specific_logger = logging.getLogger("specific_logger")
@@ -25,7 +26,7 @@ specific_log_handler.setFormatter(log_format)
 # Add the handler to the specific logger
 specific_logger.addHandler(specific_log_handler)
 
-QUERY_DURATION_SECONDS = 60  # Duration to run queries
+QUERY_DURATION_SECONDS =240  # Duration to run queries
 QUERY_INTERVAL_SECONDS = 5  # Time between queries
 
 KAFKA_QUERY_TOPIC = "query_processing"

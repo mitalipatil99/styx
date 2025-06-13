@@ -10,5 +10,6 @@ mmh3==5.0.1
 aiokafka==0.12.0
 # snapshots
 minio==7.2.10
+zstandard==0.23.0
 # deathstar
 geopy

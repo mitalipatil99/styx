@@ -3,7 +3,7 @@ from collections import defaultdict
 import ast
 import re
 
-state_log_path = '/home/mitalipatil/PycharmProjects/styx/worker-logs.log'
+state_log_path = './styx/worker-logs.log'
 total_workers = 4
 latest_epoch_count = 1
 epoch_state_store = {}

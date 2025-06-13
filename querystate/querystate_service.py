@@ -5,6 +5,7 @@ import traceback
 import time
 import os
 from asyncio import StreamReader, StreamWriter
+import zstandard as zstd
 
 import cityhash
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, ConsumerRecord
@@ -13,6 +14,7 @@ from styx.common.exceptions import NonSupportedKeyType
 
 from styx.common.logging import logging
 from styx.common.message_types import MessageType
+from styx.common.serialization import msgpack_deserialization
 from styx.common.tcp_networking import NetworkingManager
 from styx.common.util.aio_task_scheduler import AIOTaskScheduler
 from struct import unpack
@@ -83,7 +85,9 @@ class QueryStateService(object):
                 self.received_workers.set()
             case MessageType.QueryMsg:
                 # Decode the message
-                worker_id, epoch_counter, state_delta ,epoch_end_ts_state = self.networking.decode_message(data)
+                decompressor = zstd.ZstdDecompressor()
+                decompressed_data = decompressor.decompress(self.networking.decode_message(data))
+                worker_id, epoch_counter, state_delta, epoch_end_ts_state = msgpack_deserialization(decompressed_data)
                 logging.warning(f"Received state delta from worker {worker_id} for epoch {epoch_counter}")
 
                 await self.receive_delta(worker_id,epoch_counter,state_delta,epoch_end_ts_state)
@@ -129,6 +133,8 @@ class QueryStateService(object):
                     for key, value in kv_pairs.items():
                         self.state_store[operator_partition][key] = value
             logging.warning(f"Epoch {epoch_counter} state updated in styx @ {self.received_epoch_timestamps[epoch_counter]}")
+            logging.warning(f"Epoch {epoch_counter} state updated in query state @: { time.time_ns() // 1_000_000}")
+            logging.warning(f"Epoch: {epoch_counter} update latency = {(time.time_ns() // 1_000_000) - self.received_epoch_timestamps[epoch_counter][0]} ms ")
 
             del self.epoch_deltas[epoch_counter]
             del self.epoch_count[epoch_counter]
