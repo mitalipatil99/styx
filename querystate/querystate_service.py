@@ -54,6 +54,8 @@ class QueryStateService(object):
         self.kafka_producer: AIOKafkaProducer | None = None
         self.kafka_consumer: AIOKafkaConsumer | None = None
 
+        self.zstd_decompressor = zstd.ZstdDecompressor()
+
         self.received_workers = asyncio.Event()
 
     async def add_task_to_queue(self, timestamp: int, task_coro):
@@ -85,8 +87,7 @@ class QueryStateService(object):
                 self.received_workers.set()
             case MessageType.QueryMsg:
                 # Decode the message
-                decompressor = zstd.ZstdDecompressor()
-                decompressed_data = decompressor.decompress(self.networking.decode_message(data))
+                decompressed_data = self.zstd_decompressor.decompress(self.networking.decode_message(data))
                 worker_id, epoch_counter, state_delta, epoch_end_ts_state = msgpack_deserialization(decompressed_data)
                 logging.warning(f"Received state delta from worker {worker_id} for epoch {epoch_counter}")
 
@@ -114,9 +115,14 @@ class QueryStateService(object):
 
 
     async def check_and_merge_deltas(self):
-        if (self.latest_epoch_count in self.epoch_count and
-                self.epoch_count[self.latest_epoch_count] == self.total_workers):
-            await self.mergeDeltas_and_updateState(self.latest_epoch_count)
+        if self.latest_epoch_count not in self.epoch_count:
+            return
+
+        if self.epoch_count[self.latest_epoch_count] < self.total_workers:
+            return
+
+        # Only merge if all deltas are received and this epoch hasn't been merged yet
+        await self.mergeDeltas_and_updateState(self.latest_epoch_count)
 
     async def mergeDeltas_and_updateState(self, epoch_counter):
             deltas = self.epoch_deltas[epoch_counter]
@@ -127,11 +133,8 @@ class QueryStateService(object):
             # Merge deltas directly into state_store
             for worker_delta in deltas.values():
                 for operator_partition, kv_pairs in worker_delta.items():
-                    if operator_partition not in self.state_store:
-                        self.state_store[operator_partition] = {}  # Initialize if missing
+                    self.state_store.setdefault(operator_partition, {}).update(kv_pairs)
 
-                    for key, value in kv_pairs.items():
-                        self.state_store[operator_partition][key] = value
             logging.warning(f"Epoch {epoch_counter} state updated in styx @ {self.received_epoch_timestamps[epoch_counter]}")
             logging.warning(f"Epoch {epoch_counter} state updated in query state @: { time.time_ns() // 1_000_000}")
             logging.warning(f"Epoch: {epoch_counter} update latency = {(time.time_ns() // 1_000_000) - self.received_epoch_timestamps[epoch_counter][0]} ms ")

@@ -5,7 +5,7 @@ import random
 
 # Query type constants
 QUERY_TYPES = ["GET_KEY_STATE"]
-KEY_RANGE = (0, 99999)  # Range for random keys
+KEY_RANGE = (0, 99)  # Range for random keys
 PARTITION_RANGE = (0, 4)  # Range for random partitions
 operator_type=["ycsb"]
 

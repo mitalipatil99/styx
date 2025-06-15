@@ -151,6 +151,7 @@ class AriaProtocol(BaseTransactionalProtocol):
 
         self.started = asyncio.Event()
         self.wait_responses_to_be_sent = asyncio.Event()
+        self.zstd_compressor = zstd.ZstdCompressor()
 
     async def stop(self):
         await self.ingress.stop()
@@ -228,13 +229,11 @@ class AriaProtocol(BaseTransactionalProtocol):
                            serializer: Serializer = Serializer.NONE):
 
         if isinstance(message, tuple):
-            serialized_message = msgpack_serialization(message)  # tuple -> bytes
+            serialized_message = msgpack_serialization(message)
         else:
-            serialized_message = message  # already bytes
+            serialized_message = message
 
-        # Step 2: Then compress
-        compressor = zstd.ZstdCompressor()
-        compressed_message = compressor.compress(serialized_message)
+        compressed_message = self.zstd_compressor.compress(serialized_message)
 
         await self.networking.send_message(STATE_HOST, STATE_PORT,
                                                msg=compressed_message,
