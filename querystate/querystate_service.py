@@ -34,6 +34,8 @@ class QueryStateService(object):
         self.epoch_deltas = {}  # Stores {epoch: {worker_id: delta}}
         self.epoch_count = {}  # Tracks number of deltas received per epoch
         self.received_epoch_timestamps = {} # track the received timetamps of committed epochs in styx
+        self.pending_merges = asyncio.Queue()
+        self.per_epoch_locks = {}  # Optional if needed per-epoch
         self.state_store = {}  #global state store
         self.latest_epoch_count = 1
         self.state_lock = asyncio.Lock()
@@ -102,11 +104,17 @@ class QueryStateService(object):
            lock state and merge all deltas and update the state store.
         """
         await self.received_workers.wait()
-        async with self.state_lock:
-            if epoch_counter not in self.epoch_deltas:
-                self.epoch_deltas[epoch_counter]={}
-                self.epoch_count[epoch_counter] = 0
-                self.received_epoch_timestamps[epoch_counter] = []
+        """Queue delta for background processing."""
+        await self.pending_merges.put((epoch_counter, worker_id, state_delta, epoch_end_ts_state))
+
+    async def merge_worker(self):
+        while True:
+            epoch_counter, worker_id, state_delta, epoch_end_ts_state = await self.pending_merges.get()
+            async with self.state_lock:
+                if epoch_counter not in self.epoch_deltas:
+                    self.epoch_deltas[epoch_counter] = {}
+                    self.epoch_count[epoch_counter] = 0
+                    self.received_epoch_timestamps[epoch_counter] = []
 
             self.epoch_deltas[epoch_counter][worker_id] = state_delta
             self.received_epoch_timestamps[epoch_counter].append(epoch_end_ts_state)
@@ -143,10 +151,35 @@ class QueryStateService(object):
             del self.epoch_count[epoch_counter]
             self.latest_epoch_count += 1
 
-    # async def merge_scheduler(self):
-    #     while True:
-    #         await self.add_task_to_queue(asyncio.get_running_loop().time(), self.check_and_merge_deltas())
-    #         await asyncio.sleep(0.05)
+    # async def check_and_merge_deltas(self):
+    #     if self.latest_epoch_count not in self.epoch_count:
+    #         return
+    #
+    #     if self.epoch_count[self.latest_epoch_count] < self.total_workers:
+    #         return
+    #
+    #     # Only merge if all deltas are received and this epoch hasn't been merged yet
+    #     await self.mergeDeltas_and_updateState(self.latest_epoch_count)
+    #
+    # async def mergeDeltas_and_updateState(self, epoch_counter):
+    #         deltas = self.epoch_deltas[epoch_counter]
+    #         if self.received_epoch_timestamps[epoch_counter]:
+    #             styx_epoch_commit_ts = max(self.received_epoch_timestamps[epoch_counter])
+    #             self.received_epoch_timestamps[epoch_counter] = [styx_epoch_commit_ts]
+    #
+    #         # Merge deltas directly into state_store
+    #         for worker_delta in deltas.values():
+    #             for operator_partition, kv_pairs in worker_delta.items():
+    #                 self.state_store.setdefault(operator_partition, {}).update(kv_pairs)
+    #
+    #         logging.warning(f"Epoch {epoch_counter} state updated in styx @ {self.received_epoch_timestamps[epoch_counter]}")
+    #         logging.warning(f"Epoch {epoch_counter} state updated in query state @: { time.time_ns() // 1_000_000}")
+    #         logging.warning(f"Epoch: {epoch_counter} update latency = {(time.time_ns() // 1_000_000) - self.received_epoch_timestamps[epoch_counter][0]} ms ")
+    #
+    #         del self.epoch_deltas[epoch_counter]
+    #         del self.epoch_count[epoch_counter]
+    #         self.latest_epoch_count += 1
+
 
     async def kafka_query_scheduler(self):
         while True:
@@ -363,6 +396,7 @@ class QueryStateService(object):
         self.kafka_consumer = AIOKafkaConsumer(bootstrap_servers=[KAFKA_URL])
         self.start_networking_tasks()
         asyncio.create_task(self.process_task_queue())
+        asyncio.create_task(self.merge_worker())
         asyncio.create_task(self.start_query_processing())
         await self.start_tcp_service()
 

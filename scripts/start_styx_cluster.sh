@@ -15,5 +15,5 @@ sleep 5
 docker compose -f docker-compose-minio.yml up -d
 sleep 10
 docker compose build --build-arg epoch_size="$epoch_size"
-docker compose up --scale worker="$threaded_scale_factor" -d
+docker compose up --scale worker=4 -d
 sleep 5

@@ -510,7 +510,7 @@ class AriaProtocol(BaseTransactionalProtocol):
                         worker_id = self.id
                         epoch_counter = self.sequencer.epoch_counter
                         epoch_end_ts_state = time.time_ns() // 1_000_000
-                        # logging.warning(f"Sending state delta of worker {worker_id} at epoch {epoch_counter} @ map{state_delta} ")
+                        logging.warning(f"Sending state delta of worker {worker_id} at epoch {epoch_counter} @ map{state_delta} ")
                         self.aio_task_scheduler.create_task(
                             self.send_state_delta_message(
                                 msg_type=MessageType.QueryMsg,

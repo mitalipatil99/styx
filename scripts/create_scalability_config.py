@@ -7,7 +7,7 @@ experiment_time = 60
 warmup_time = 10
 script_path = os.path.dirname(os.path.realpath(__file__))
 
-results_path = "../results"
+results_path = "../results_1"
 
 file_names = [f for f in os.listdir(results_path) if os.path.isfile(os.path.join(results_path, f))]
 
